@@ -1,39 +1,22 @@
-import math
-from typing import Literal, Tuple
-
-from spandrel import (
-    Architecture,
-    ImageModelDescriptor,
-    KeyCondition,
-    ModelTiling,
-    SizeRequirements,
-    StateDict,
-)
-from spandrel.util import get_seq_len, store_hyperparameters
-
+from ...__helpers.model_descriptor import Architecture, ImageModelDescriptor, StateDict, ModelTiling, SizeRequirements
+from ...util import get_seq_len, KeyCondition
 from .__arch.aethernet_arch import AetherNet
-
+from typing import Tuple
 
 class AetherNetArch(Architecture[AetherNet]):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             id="AetherNet",
             name="AetherNet",
-            # We need to detect both fused (inference) and unfused (training) models.
-            # We can do this by checking for a common set of keys, and then for one
-            # key that is specific to either the fused or unfused state.
             detect=KeyCondition.has_all(
                 "conv_first.weight",
                 "conv_after_body.weight",
+                "conv_before_upsample.weight",
                 "conv_last.weight",
-                "upsample.blocks.0.weight",
-                "stages.0.0.ffn.conv_gate.weight",
-            )
-            & (
                 KeyCondition.has_any(
-                    "stages.0.0.conv.lk_conv.weight",  # unfused
-                    "stages.0.0.conv.fused_conv.weight",  # fused
-                )
+                    "stages.0.0.conv.lk_conv.weight",      # unfused
+                    "stages.0.0.conv.fused_conv.weight",   # fused
+                ),
             ),
         )
 
@@ -77,12 +60,10 @@ class AetherNetArch(Architecture[AetherNet]):
             state_dict["stages.0.0.ffn.conv_gate.weight"].shape[0] / embed_dim
         )
 
-        if "stages.0.0.norm.weight" in state_dict:
-            norm_shape_dim = len(state_dict["stages.0.0.norm.weight"].shape)
-            if norm_shape_dim == 1:
-                norm_type = "layernorm"
-            elif norm_shape_dim == 4:
-                norm_type = "deployment"
+        if "stages.0.0.norm.running_mean" in state_dict:
+            norm_type = "deployment"
+        else:
+            norm_type = "layernorm"
 
         use_channel_attn = "stages.0.0.channel_attn.fc.0.weight" in state_dict
         use_spatial_attn = "stages.0.0.spatial_attn.conv.weight" in state_dict
@@ -90,14 +71,22 @@ class AetherNetArch(Architecture[AetherNet]):
 
         # Detect scale from upsampler
         num_upsample_blocks = get_seq_len(state_dict, "upsample.blocks")
-        if num_upsample_blocks == 2:  # Potentially 3x or 1x
-            # A bit of a heuristic for 3x vs 1x
-            if state_dict["upsample.blocks.0.weight"].shape[0] % 9 == 0:
-                 scale = 3
+
+        if num_upsample_blocks == 0:
+            # No blocks means scale is 1x (Identity layers have no state)
+            scale = 1
+        elif "upsample.blocks.0.0.weight" in state_dict:
+            # Check for the distinctive 3x scale first.
+            # The conv layer for 3x upsampling multiplies channels by 9.
+            # The number of input channels to the upsampler is embed_dim.
+            if state_dict["upsample.blocks.0.0.weight"].shape[0] == embed_dim * 9:
+                scale = 3
             else:
-                 scale = 1
+                # Otherwise, it's a power of 2. For AetherNet, each block is a 2x upscale.
+                scale = 2 ** num_upsample_blocks
         else:
-            scale = 2 ** (num_upsample_blocks // 2)
+            # Fallback for unexpected cases, assume 1x.
+            scale = 1
 
         # Presets and tags based on embed_dim and num_stages
         if embed_dim <= 64 and num_stages == 3:
@@ -111,7 +100,7 @@ class AetherNetArch(Architecture[AetherNet]):
             arch_name = "aether_large"
         else:
             arch_name = "custom"
-        
+
         tags = [arch_name]
         if fused_init: tags.append("fused")
         # Check if model comes from QAT based on a key from quantization stubs
@@ -150,5 +139,3 @@ class AetherNetArch(Architecture[AetherNet]):
             tiling=ModelTiling.SUPPORTED,
             size_requirements=SizeRequirements(multiple_of=8),
         )
-
-__all__ = ["AetherNetArch", "AetherNet"]

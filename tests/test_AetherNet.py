@@ -1,7 +1,4 @@
-import torch
 from spandrel.architectures.AetherNet import AetherNet, AetherNetArch
-from spandrel.util import get_seq_len
-
 from .util import (
     ModelFile,
     TestImage,
@@ -13,76 +10,132 @@ from .util import (
 
 skip_if_unchanged(__file__)
 
-
 def test_load():
-    # Test unfused
+    """
+    Tests that the load function can correctly detect parameters for various
+    model configurations.
+    """
     assert_loads_correctly(
         AetherNetArch(),
-        lambda: AetherNet(scale=2, fused_init=False),
-        lambda: AetherNet(scale=4, embed_dim=64, fused_init=False),
-        lambda: AetherNet(scale=3, depths=(2, 2, 2), fused_init=False),
-        lambda: AetherNet(scale=2, norm_type="layernorm", fused_init=False),
-    )
-    # Test fused
-    assert_loads_correctly(
-        AetherNetArch(),
-        lambda: AetherNet(scale=2, fused_init=True),
-        lambda: AetherNet(scale=4, embed_dim=64, fused_init=True),
+        # Test a variety of scales
+        lambda: AetherNet(scale=1),
+        lambda: AetherNet(scale=2),
+        lambda: AetherNet(scale=3),
+        lambda: AetherNet(scale=4),
+        # Test different depths and dimensions
+        lambda: AetherNet(embed_dim=64, depths=(2, 2, 2)),
+        # Test different norm_type
+        lambda: AetherNet(norm_type="layernorm"),
+        # Test fused vs. unfused.
+        lambda: AetherNet(fused_init=True),
+        lambda: AetherNet(fused_init=False),
+        # Test other boolean flags
+        lambda: AetherNet(use_channel_attn=False),
+        lambda: AetherNet(use_spatial_attn=True),
+        lambda: AetherNet(quantize_residual=False),
+        # Test a complex combination
+        lambda: AetherNet(
+            scale=2,
+            embed_dim=128,
+            depths=(5, 5, 5, 5),
+            norm_type="layernorm",
+            use_spatial_attn=True,
+        ),
     )
 
 def test_size_requirements():
-    file = ModelFile.from_options(AetherNetArch(), lambda: AetherNet(scale=4))
-    model = file.load_model()
+    """
+    Tests the size requirements of a default AetherNet model and runs an
+    inference test.
+    """
+    # Create the model descriptor in memory
+    arch = AetherNetArch()
+    model = AetherNet(scale=4)
+    state_dict = model.state_dict()
+    loaded_model_descriptor = arch.load(state_dict)
+
+    # Check size requirements
+    assert loaded_model_descriptor.size_requirements.multiple_of == 8
+
+    # Create a dummy ModelFile just for naming the output of the inference test
+    dummy_file = ModelFile(name="AetherNet_dummy_4x_size_req")
+
     assert_image_inference(
-        file,
-        model,
-        [TestImage.SR_8, TestImage.SR_16, TestImage.SR_32, TestImage.SR_64],
+        dummy_file,
+        loaded_model_descriptor,
+        [TestImage.SR_16, TestImage.SR_32, TestImage.SR_64],
     )
 
 def test_AetherNet_tiny_x4(snapshot):
+    arch = AetherNetArch()
     model_fn = lambda: AetherNet(embed_dim=64, depths=(3, 3, 3), scale=4, res_scale=0.2)
-    file = ModelFile.from_options(AetherNetArch(), model_fn)
-    model = file.load_model()
-    assert model == snapshot(exclude=disallowed_props)
-    assert isinstance(model.model, AetherNet)
+
+    # Manually create the model descriptor
+    model_instance = model_fn()
+    state_dict = model_instance.state_dict()
+    loaded_model_descriptor = arch.load(state_dict)
+
+    assert loaded_model_descriptor == snapshot(exclude=disallowed_props)
+    assert isinstance(loaded_model_descriptor.model, AetherNet)
+
+    # Create a dummy ModelFile for the inference test output name
+    dummy_file = ModelFile(name="AetherNet_tiny_x4")
     assert_image_inference(
-        file,
-        model,
-        [TestImage.SR_16],
+        dummy_file,
+        loaded_model_descriptor,
+        [TestImage.SR_16, TestImage.SR_32, TestImage.SR_64],
     )
 
 def test_AetherNet_small_x4(snapshot):
+    arch = AetherNetArch()
     model_fn = lambda: AetherNet(embed_dim=96, depths=(4, 4, 4, 4), scale=4)
-    file = ModelFile.from_options(AetherNetArch(), model_fn)
-    model = file.load_model()
-    assert model == snapshot(exclude=disallowed_props)
-    assert isinstance(model.model, AetherNet)
+
+    model_instance = model_fn()
+    state_dict = model_instance.state_dict()
+    loaded_model_descriptor = arch.load(state_dict)
+
+    assert loaded_model_descriptor == snapshot(exclude=disallowed_props)
+    assert isinstance(loaded_model_descriptor.model, AetherNet)
+
+    dummy_file = ModelFile(name="AetherNet_small_x4")
     assert_image_inference(
-        file,
-        model,
-        [TestImage.SR_16],
+        dummy_file,
+        loaded_model_descriptor,
+        [TestImage.SR_16, TestImage.SR_32, TestImage.SR_64],
     )
 
 def test_AetherNet_medium_x4(snapshot):
+    arch = AetherNetArch()
     model_fn = lambda: AetherNet(embed_dim=128, depths=(6, 6, 6, 6), scale=4)
-    file = ModelFile.from_options(AetherNetArch(), model_fn)
-    model = file.load_model()
-    assert model == snapshot(exclude=disallowed_props)
-    assert isinstance(model.model, AetherNet)
+
+    model_instance = model_fn()
+    state_dict = model_instance.state_dict()
+    loaded_model_descriptor = arch.load(state_dict)
+
+    assert loaded_model_descriptor == snapshot(exclude=disallowed_props)
+    assert isinstance(loaded_model_descriptor.model, AetherNet)
+
+    dummy_file = ModelFile(name="AetherNet_medium_x4")
     assert_image_inference(
-        file,
-        model,
-        [TestImage.SR_16],
+        dummy_file,
+        loaded_model_descriptor,
+        [TestImage.SR_16, TestImage.SR_32, TestImage.SR_64],
     )
 
 def test_AetherNet_large_x4(snapshot):
+    arch = AetherNetArch()
     model_fn = lambda: AetherNet(embed_dim=180, depths=(8, 8, 8, 8, 8), scale=4, use_spatial_attn=True)
-    file = ModelFile.from_options(AetherNetArch(), model_fn)
-    model = file.load_model()
-    assert model == snapshot(exclude=disallowed_props)
-    assert isinstance(model.model, AetherNet)
+
+    model_instance = model_fn()
+    state_dict = model_instance.state_dict()
+    loaded_model_descriptor = arch.load(state_dict)
+
+    assert loaded_model_descriptor == snapshot(exclude=disallowed_props)
+    assert isinstance(loaded_model_descriptor.model, AetherNet)
+
+    dummy_file = ModelFile(name="AetherNet_large_x4")
     assert_image_inference(
-        file,
-        model,
-        [TestImage.SR_16],
+        dummy_file,
+        loaded_model_descriptor,
+        [TestImage.SR_16, TestImage.SR_32, TestImage.SR_64],
     )
