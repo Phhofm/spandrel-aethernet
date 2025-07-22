@@ -22,8 +22,8 @@ def test_load():
         lambda: AetherNet(scale=2),
         lambda: AetherNet(scale=3),
         lambda: AetherNet(scale=4),
-        # Test different depths and dimensions
-        lambda: AetherNet(embed_dim=64, depths=(2, 2, 2)),
+        # This now explicitly tests the "tiny" preset's conditions
+        lambda: AetherNet(embed_dim=64, depths=(3, 3, 3), res_scale=0.2),
         # Test different norm_type
         lambda: AetherNet(norm_type="layernorm"),
         # Test fused vs. unfused.
@@ -41,6 +41,8 @@ def test_load():
             norm_type="layernorm",
             use_spatial_attn=True,
         ),
+        # Add this argument to ignore the undetectable parameter
+        ignore_parameters={"quantize_residual"},
     )
 
 def test_size_requirements():

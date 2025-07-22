@@ -11,11 +11,11 @@ class AetherNetArch(Architecture[AetherNet]):
             detect=KeyCondition.has_all(
                 "conv_first.weight",
                 "conv_after_body.weight",
-                "conv_before_upsample.weight",
+                "conv_before_upsample.0.weight",  # <-- ADD a '.0' here
                 "conv_last.weight",
                 KeyCondition.has_any(
-                    "stages.0.0.conv.lk_conv.weight",      # unfused
-                    "stages.0.0.conv.fused_conv.weight",   # fused
+                    "stages.0.0.conv.lk_conv.weight",
+                    "stages.0.0.conv.fused_conv.weight",
                 ),
             ),
         )
@@ -67,7 +67,6 @@ class AetherNetArch(Architecture[AetherNet]):
 
         use_channel_attn = "stages.0.0.channel_attn.fc.0.weight" in state_dict
         use_spatial_attn = "stages.0.0.spatial_attn.conv.weight" in state_dict
-        quantize_residual = "stages.0.0.res_dequant.scale" in state_dict
 
         # Detect scale from upsampler
         num_upsample_blocks = get_seq_len(state_dict, "upsample.blocks")
