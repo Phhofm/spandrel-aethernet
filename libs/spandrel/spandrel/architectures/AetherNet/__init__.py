@@ -33,7 +33,7 @@ class AetherNetArch(Architecture[AetherNet]):
         fused_init = "stages.0.0.conv.fused_conv.weight" in state_dict
         if fused_init:
             lk_kernel = state_dict["stages.0.0.conv.fused_conv.weight"].shape[2]
-            sk_kernel = 5  # Default, cannot be detected from fused model
+            sk_kernel = 5
         else:
             lk_kernel = state_dict["stages.0.0.conv.lk_conv.weight"].shape[2]
             sk_kernel = state_dict["stages.0.0.conv.sk_conv.weight"].shape[2]
@@ -51,8 +51,7 @@ class AetherNetArch(Architecture[AetherNet]):
         use_channel_attn = "stages.0.0.channel_attn.fc.0.weight" in state_dict
         use_spatial_attn = "stages.0.0.spatial_attn.conv.weight" in state_dict
 
-        # Correct scale detection that handles both arch versions
-        scale = int(state_dict["scale_tensor"].item()) if "scale_tensor" in state_dict else 4
+        scale = int(state_dict["scale_tensor"].item())
 
         res_scale = 0.1
         if embed_dim <= 64:
@@ -68,13 +67,19 @@ class AetherNetArch(Architecture[AetherNet]):
             arch_name = "custom"
         tags = [arch_name]
 
+        is_qat = any("fake_quant" in k for k in state_dict)
+
         model = AetherNet(
             in_chans=in_chans, embed_dim=embed_dim, depths=depths, mlp_ratio=mlp_ratio,
             lk_kernel=lk_kernel, sk_kernel=sk_kernel, scale=scale,
             use_channel_attn=use_channel_attn, use_spatial_attn=use_spatial_attn,
             norm_type=norm_type, res_scale=res_scale,
-            fused_init=fused_init,  # Pass the detected fusion state here
+            fused_init=fused_init,
         )
+
+        # QAT models need to be prepared before loading the state dict
+        if is_qat:
+            model.prepare_qat()
 
         if (scale & (scale - 1)) == 0 and scale > 0:
             multiple_of = scale

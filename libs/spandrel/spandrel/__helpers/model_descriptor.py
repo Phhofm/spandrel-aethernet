@@ -215,6 +215,7 @@ class ModelBase(ABC, Generic[T]):
         """
 
         self.model.load_state_dict(state_dict)  # type: ignore
+        #self.model.load_state_dict(state_dict, strict=False)
 
     @property
     def model(self) -> T:

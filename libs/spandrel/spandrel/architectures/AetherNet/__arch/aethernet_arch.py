@@ -146,7 +146,11 @@ class ReparamLargeKernelConv(nn.Module):
             self.fused_conv.qconfig = self.lk_conv.qconfig
 
         # Cleanup the training-specific parameters
-        del self.lk_conv, self.sk_conv, self.lk_bias, self.sk_bias
+        #del self.lk_conv, self.sk_conv, self.lk_bias, self.sk_bias
+
+        # Instead of deleting, register them as None to properly un-register them
+        self.register_buffer('running_mean', None)
+        self.register_buffer('running_var', None)
         self.fused = True
 
 
@@ -334,6 +338,8 @@ class DeploymentNorm(nn.Module):
         self.weight.data = scale
         self.bias.data = shift
 
+        self.register_buffer(..., None)
+
         # Cleanup buffers
         del self.running_mean
         del self.running_var
@@ -471,13 +477,6 @@ class QuantFusion(nn.Module):
 # Replace the entire existing AdaptiveUpsample class with this one.
 # In aethernet_arch.py, replace the whole class
 class AdaptiveUpsample(nn.Module):
-    """
-    Resolution-aware upsampling module supporting powers of 2 and scale 3.
-
-    Args:
-        scale: Upscaling factor
-        in_channels: Input channels
-    """
     def __init__(self, scale: int, in_channels: int):
         super().__init__()
         if scale < 1:
@@ -488,7 +487,6 @@ class AdaptiveUpsample(nn.Module):
         self.scale = scale
         self.in_channels = in_channels
         self.blocks = nn.ModuleList()
-        # Ensure out_channels is multiple of 4 for PixelShuffle
         self.out_channels = max(32, (in_channels // max(1, scale // 2)) & -2)
 
         # Power of 2 scaling
@@ -497,9 +495,17 @@ class AdaptiveUpsample(nn.Module):
             current_channels = in_channels
             for i in range(num_ups):
                 next_channels = self.out_channels if (i == num_ups - 1) else current_channels // 2
+                # THIS IS THE CHANGE: Append layers directly
                 self.blocks.append(nn.Conv2d(current_channels, 4 * next_channels, 3, 1, 1))
                 self.blocks.append(nn.PixelShuffle(2))
                 current_channels = next_channels
+
+                #block = nn.Sequential(
+                #    nn.Conv2d(current_channels, 4 * next_channels, 3, 1, 1),
+                #    nn.PixelShuffle(2),
+                #)
+                #self.blocks.append(block)
+                #current_channels = next_channels
         # Scale 3
         elif scale == 3:
             self.blocks.append(nn.Conv2d(in_channels, 9 * self.out_channels, 3, 1, 1))
