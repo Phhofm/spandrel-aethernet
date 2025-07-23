@@ -141,3 +141,21 @@ def test_AetherNet_large_x4(snapshot):
         loaded_model_descriptor,
         [TestImage.SR_16, TestImage.SR_32, TestImage.SR_64],
     )
+
+def test_real_trained_model_loading():
+    """
+    This is the most important test. It uses a real trained model file
+    to verify that the detection and loading process works end-to-end.
+    """
+    # This tells the test to look for the model in `tests/models`
+    file = ModelFile(name="net_g_185000.pth")
+
+    # This uses the full ModelLoader, which first DETECTS the architecture
+    # from the MAIN_REGISTRY, and then calls the `load` function.
+    # This is the exact same process chaiNNer uses.
+    model = file.load_model()
+
+    # If the test reaches here, it means detection and loading were successful.
+    # We can add an assertion just to be sure.
+    assert isinstance(model.model, AetherNet)
+    print("Successfully loaded the real model!")
