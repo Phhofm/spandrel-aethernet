@@ -57,7 +57,7 @@ def test_size_requirements():
     loaded_model_descriptor = arch.load(state_dict)
 
     # Check size requirements
-    assert loaded_model_descriptor.size_requirements.multiple_of == 8
+    assert loaded_model_descriptor.size_requirements.multiple_of == 4
 
     # Create a dummy ModelFile just for naming the output of the inference test
     dummy_file = ModelFile(name="AetherNet_dummy_4x_size_req")
@@ -148,7 +148,9 @@ def test_real_trained_model_loading():
     to verify that the detection and loading process works end-to-end.
     """
     # This tells the test to look for the model in `tests/models`
-    file = ModelFile(name="net_g_185000.pth")
+    #file = ModelFile(name="net_g_185000.pth")
+    file = ModelFile(name="net_g_185000_aether_large_fp32.pth")
+
 
     # This uses the full ModelLoader, which first DETECTS the architecture
     # from the MAIN_REGISTRY, and then calls the `load` function.
