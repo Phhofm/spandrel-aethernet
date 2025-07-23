@@ -14,6 +14,7 @@ safe_list = {
     ("torch", "IntStorage"),
     ("torch", "LongStorage"),
     ("torch", "DoubleStorage"),
+    ("torch.torch_version", "TorchVersion")
 }
 
 
