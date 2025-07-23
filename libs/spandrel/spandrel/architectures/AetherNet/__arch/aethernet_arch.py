@@ -473,6 +473,10 @@ class QuantFusion(nn.Module):
 class AdaptiveUpsample(nn.Module):
     """
     Resolution-aware upsampling module supporting powers of 2 and scale 3.
+
+    Args:
+        scale: Upscaling factor
+        in_channels: Input channels
     """
     def __init__(self, scale: int, in_channels: int):
         super().__init__()
@@ -484,36 +488,27 @@ class AdaptiveUpsample(nn.Module):
         self.scale = scale
         self.in_channels = in_channels
         self.blocks = nn.ModuleList()
-
-        # This logic determines the output channel count of this module.
-        # It's based on your original code to ensure compatibility.
+        # Ensure out_channels is multiple of 4 for PixelShuffle
         self.out_channels = max(32, (in_channels // max(1, scale // 2)) & -2)
 
         # Power of 2 scaling
-        if (scale & (scale - 1) == 0) and scale != 1:
+        if (scale & (scale - 1)) == 0 and scale != 1:
             num_ups = int(math.log2(scale))
             current_channels = in_channels
             for i in range(num_ups):
-                is_last_block = (i == num_ups - 1)
-                next_channels = self.out_channels if is_last_block else current_channels // 2
-
-                block = nn.Sequential(
-                    nn.Conv2d(current_channels, next_channels * 4, 3, 1, 1),
-                    nn.PixelShuffle(2)
-                )
-                self.blocks.append(block)
+                next_channels = self.out_channels if (i == num_ups - 1) else current_channels // 2
+                self.blocks.append(nn.Conv2d(current_channels, 4 * next_channels, 3, 1, 1))
+                self.blocks.append(nn.PixelShuffle(2))
                 current_channels = next_channels
         # Scale 3
         elif scale == 3:
-            self.blocks.append(nn.Sequential(
-                nn.Conv2d(in_channels, self.out_channels * 9, 3, 1, 1),
-                nn.PixelShuffle(3)
-            ))
+            self.blocks.append(nn.Conv2d(in_channels, 9 * self.out_channels, 3, 1, 1))
+            self.blocks.append(nn.PixelShuffle(3))
         # Scale 1 (no upsampling)
         elif scale == 1:
             self.blocks.append(nn.Conv2d(in_channels, self.out_channels, 3, 1, 1))
         else:
-            raise ValueError(f"Unsupported scale: {scale}. Only 1, 3 and powers of 2 are supported.")
+            raise ValueError(f"Unsupported scale: {scale}. Only 1, 3 and powers of 2")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for block in self.blocks:
@@ -681,6 +676,9 @@ class AetherNet(nn.Module):
         self.quant_add = torch.nn.quantized.FloatFunctional()
         self.upsample_dequant = tq.DeQuantStub()
         self.upsample_quant = tq.QuantStub()
+
+        if self.fused_init:
+            self.fuse_model()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Input normalization
