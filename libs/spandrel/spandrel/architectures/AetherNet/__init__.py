@@ -23,6 +23,7 @@ class AetherNetArch(Architecture[AetherNet]):
     def load(self, state_dict: StateDict) -> ImageModelDescriptor[AetherNet]:
         # Defaults from the AetherNet constructor
         in_chans: int = 3
+        out_chans: int = 3
         embed_dim: int = 96
         depths: Tuple[int, ...] = (4, 4, 4, 4)
         mlp_ratio: float = 1.5
@@ -41,6 +42,7 @@ class AetherNetArch(Architecture[AetherNet]):
 
         # Detections
         in_chans = state_dict["conv_first.weight"].shape[1]
+        out_chans = in_chans
         embed_dim = state_dict["conv_first.weight"].shape[0]
 
         num_stages = get_seq_len(state_dict, "stages")
@@ -60,10 +62,15 @@ class AetherNetArch(Architecture[AetherNet]):
             state_dict["stages.0.0.ffn.conv_gate.weight"].shape[0] / embed_dim
         )
 
-        if "stages.0.0.norm.running_mean" in state_dict:
+        # Check the number of dimensions of the norm weight tensor
+        norm_weight_shape_len = len(state_dict["stages.0.0.norm.weight"].shape)
+        if norm_weight_shape_len == 4:
             norm_type = "deployment"
-        else:
+        elif norm_weight_shape_len == 1:
             norm_type = "layernorm"
+        else:
+            # This will raise an error if we encounter an unknown norm type, which is good.
+            raise ValueError(f"Unexpected norm weight shape: {state_dict['stages.0.0.norm.weight'].shape}")
 
         use_channel_attn = "stages.0.0.channel_attn.fc.0.weight" in state_dict
         use_spatial_attn = "stages.0.0.spatial_attn.conv.weight" in state_dict
@@ -107,6 +114,7 @@ class AetherNetArch(Architecture[AetherNet]):
 
         model = AetherNet(
             in_chans=in_chans,
+            out_chans=out_chans,
             embed_dim=embed_dim,
             depths=depths,
             mlp_ratio=mlp_ratio,
@@ -124,6 +132,11 @@ class AetherNetArch(Architecture[AetherNet]):
             res_scale=res_scale,
         )
 
+        # CRITICAL STEP: If the state_dict is from a fused model,
+        # fuse our newly created model to match its structure.
+        if "stages.0.0.norm.running_mean" not in state_dict:
+            model.fuse_model()
+
         return ImageModelDescriptor(
             model,
             state_dict,
@@ -134,7 +147,7 @@ class AetherNetArch(Architecture[AetherNet]):
             supports_bfloat16=True,
             scale=scale,
             input_channels=in_chans,
-            output_channels=in_chans,
+            output_channels=out_chans,
             tiling=ModelTiling.SUPPORTED,
             size_requirements=SizeRequirements(multiple_of=8),
         )
