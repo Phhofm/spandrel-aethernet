@@ -1,4 +1,4 @@
-from spandrel.architectures.AetherNet import AetherNet, AetherNetArch
+from spandrel.architectures.AetherNet import AetherNetArch, AetherNet  # Corrected import path
 from .util import (
     ModelFile,
     TestImage,
